@@ -4,22 +4,32 @@
 Vault Bridge v2: a multi-tenant relay that gives Claude.ai persistent remote access to any user's Obsidian vault. Claude sends MCP requests to a Cloudflare Worker, which routes them via Durable Object to a lightweight Python client on the user's machine. The client reads/writes the local vault and returns results. Vault content never persists on the relay.
 
 ## Status
-**Steps 1–9 complete. Deployed to production.**
+**Relay (Steps 1–10): Complete. Deployed to production.**
 
 - Relay live at `vault-bridge.the-empyrean.com`
 - All four MCP tools working end-to-end
 - 36 tests passing (unit, integration, e2e)
 
+**R2-backed mode: Planned.** See `docs/r2-architecture.md`.
+
 ## Architecture
-Two components, two languages, one platform:
+Two modes, same MCP interface, same domain:
+
+### Relay mode (for always-on machines like Pip)
 - **Relay** (TypeScript, Worker + Durable Object) — runs on Cloudflare edge, stateless broker
 - **Client** (Python, pip package) — runs on user's machine, connects outbound via WSS
-
 ```
-Claude.ai  ──HTTPS/MCP──>  Worker (edge)  ──routes by token──>  Durable Object (per user)  ──WSS──>  Client
+Claude.ai  ──HTTPS/MCP──>  Worker  ──>  Durable Object  ──WSS──>  Client  ──>  Local Vault
 ```
+Full spec: `docs/relay-architecture.md`
 
-Full architecture spec: `docs/relay-architecture.md`
+### R2 mode (for friends/family — machine can be off)
+- **Worker** (TypeScript) — reads/writes R2 directly as MCP server
+- **Obsidian Plugin** (TypeScript) — syncs local vault ↔ R2 while Obsidian is open
+```
+Claude.ai  ──HTTPS/MCP──>  Worker  ──>  R2 Bucket  ◀──sync──  Obsidian Plugin
+```
+Full spec: `docs/r2-architecture.md`
 
 ## Repo Structure
 ```
@@ -53,7 +63,8 @@ vault-bridge-relay/
 ├── tokens-cli/               # Token manager (TypeScript, run via tsx)
 │   └── tokens.ts
 ├── docs/
-│   ├── relay-architecture.md # Full technical spec
+│   ├── relay-architecture.md # Relay mode technical spec
+│   ├── r2-architecture.md    # R2 mode technical spec (friends/family)
 │   ├── setup-windows.md      # User setup guide (Windows)
 │   └── setup-mac.md          # User setup guide (Mac)
 ├── CLAUDE.md                 # This file
@@ -62,11 +73,11 @@ vault-bridge-relay/
 
 ## Key Constraints
 - **v1 must not be touched.** Leigh's live vault-bridge at `vault.the-empyrean.com` stays running. v2 uses `vault-bridge.the-empyrean.com`.
-- **MCP interface matches v1 exactly.** Four tools: `list_directory`, `read_file`, `write_file`, `search_files`. Same signatures, same behaviour.
+- **MCP interface is identical across all modes.** Four tools: `list_directory`, `read_file`, `write_file`, `search_files`. Same signatures, same behaviour. Claude doesn't know which backend is serving.
 - **Relay is stateless.** Vault content passes through in-flight only. Never written to Cloudflare storage.
+- **R2 mode stores vault content.** Files persist in R2 bucket under user-prefixed paths. Synced from local vault via Obsidian plugin.
 - **Client connects outbound.** No inbound ports on user's machine. Works behind NAT.
-- **Path sanitisation required.** Client must validate all paths stay within vault root.
-- **Hibernatable WebSockets.** Use `ctx.acceptWebSocket()` so the DO can hibernate while keeping client connected.
+- **Path sanitisation required.** Both relay client and R2 Worker must validate paths stay within vault root / user prefix.
 
 ## Production Details
 - **Worker URL:** `vault-bridge-relay.leighflorescu.workers.dev`
@@ -79,9 +90,10 @@ vault-bridge-relay/
 Located on this machine at `C:\Vault_bridge\server.py`. The vault_ops functions were ported from there. Auth pattern (token in query param or Bearer header) is preserved.
 
 ## Tech Stack
-- **Relay:** Cloudflare Workers, Durable Objects, Hono, zod
-- **Storage:** Workers KV (token registry)
-- **Client:** Python 3.10+, websockets, python-dotenv, click
+- **Relay mode:** Cloudflare Workers, Durable Objects, Hono, zod
+- **R2 mode:** Cloudflare Workers, R2, Obsidian Plugin API
+- **Storage:** Workers KV (token registry), R2 (vault content in R2 mode)
+- **Relay client:** Python 3.10+, websockets, python-dotenv, click
 - **Deploy:** wrangler CLI
 
 ## Testing
