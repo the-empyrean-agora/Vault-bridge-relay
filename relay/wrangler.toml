@@ -19,6 +19,10 @@ class_name = "VaultSession"
 binding = "TOKENS"
 id = "75ae1caa0ab64689a19d94f606a9a55f"
 
+[[r2_buckets]]
+binding = "VAULT_BUCKET"
+bucket_name = "vault-bridge"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["VaultSession"]

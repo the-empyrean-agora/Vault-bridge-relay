@@ -63,7 +63,7 @@ function kvPut(key: string, value: string): void {
 function kvGet(key: string): string | null {
   try {
     return execSync(
-      `npx wrangler kv key get --namespace-id="${KV_NAMESPACE_ID}" "${key}"`,
+      `npx wrangler kv key get --namespace-id="${KV_NAMESPACE_ID}" "${key}" --remote`,
       { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
     ).trim();
   } catch {
@@ -72,7 +72,7 @@ function kvGet(key: string): string | null {
 }
 
 function kvList(): Array<{ name: string }> {
-  const raw = wrangler(`kv key list --namespace-id="${KV_NAMESPACE_ID}"`);
+  const raw = wrangler(`kv key list --namespace-id="${KV_NAMESPACE_ID}" --remote`);
   try {
     return JSON.parse(raw);
   } catch {
@@ -81,34 +81,42 @@ function kvList(): Array<{ name: string }> {
 }
 
 function kvDelete(key: string): void {
-  wrangler(`kv key delete --namespace-id="${KV_NAMESPACE_ID}" "${key}"`);
+  wrangler(`kv key delete --namespace-id="${KV_NAMESPACE_ID}" "${key}" --remote`);
 }
 
 interface TokenRecord {
   label: string;
   created: string;
   active: boolean;
+  mode?: "relay" | "r2";
+  prefix?: string;
 }
 
 // --- Commands ---
 
-function add(label: string): void {
+function add(label: string, mode: "relay" | "r2" = "relay"): void {
   const token = randomUUID();
   const record: TokenRecord = {
     label,
     created: new Date().toISOString().split("T")[0],
     active: true,
+    mode,
+    ...(mode === "r2" ? { prefix: label.toLowerCase().replace(/[^a-z0-9-]/g, "") } : {}),
   };
   kvPut(token, JSON.stringify(record));
 
-  console.log(`Token created for "${label}":`);
+  console.log(`Token created for "${label}" (${mode} mode):`);
   console.log(`  Token:  ${token}`);
   console.log(
     `  MCP URL: https://vault-bridge.the-empyrean.com/mcp?token=${token}`
   );
-  console.log(
-    `  WS URL:  wss://vault-bridge.the-empyrean.com/ws?token=${token}`
-  );
+  if (mode === "relay") {
+    console.log(
+      `  WS URL:  wss://vault-bridge.the-empyrean.com/ws?token=${token}`
+    );
+  } else {
+    console.log(`  R2 prefix: ${record.prefix}`);
+  }
 }
 
 function list(): void {
@@ -125,8 +133,9 @@ function list(): void {
     try {
       const record: TokenRecord = JSON.parse(raw);
       const status = record.active ? "active" : "REVOKED";
+      const mode = record.mode ?? "relay";
       console.log(
-        `  ${key.name.slice(0, 8)}...  ${record.label.padEnd(15)} ${record.created}  [${status}]`
+        `  ${key.name.slice(0, 8)}...  ${record.label.padEnd(15)} ${mode.padEnd(6)} ${record.created}  [${status}]`
       );
     } catch {
       console.log(`  ${key.name.slice(0, 8)}...  (invalid record)`);
@@ -141,16 +150,23 @@ function show(token: string): void {
     process.exit(1);
   }
   const record: TokenRecord = JSON.parse(raw);
+  const mode = record.mode ?? "relay";
   console.log(`Token:   ${token}`);
   console.log(`Label:   ${record.label}`);
+  console.log(`Mode:    ${mode}`);
   console.log(`Created: ${record.created}`);
   console.log(`Active:  ${record.active}`);
+  if (mode === "r2") {
+    console.log(`Prefix:  ${record.prefix}`);
+  }
   console.log(
     `MCP URL: https://vault-bridge.the-empyrean.com/mcp?token=${token}`
   );
-  console.log(
-    `WS URL:  wss://vault-bridge.the-empyrean.com/ws?token=${token}`
-  );
+  if (mode === "relay") {
+    console.log(
+      `WS URL:  wss://vault-bridge.the-empyrean.com/ws?token=${token}`
+    );
+  }
 }
 
 function revoke(token: string): void {
@@ -185,10 +201,10 @@ const [, , command, ...args] = process.argv;
 switch (command) {
   case "add":
     if (!args[0]) {
-      console.error("Usage: tokens add <label>");
+      console.error("Usage: tokens add <label> [--r2]");
       process.exit(1);
     }
-    add(args[0]);
+    add(args[0], args.includes("--r2") ? "r2" : "relay");
     break;
   case "list":
     list();
@@ -218,11 +234,12 @@ switch (command) {
     console.log(
       "Vault Bridge Token Manager\n\n" +
         "Commands:\n" +
-        "  add <label>     Create a new token\n" +
-        "  list            List all tokens\n" +
-        "  show <token>    Show token details\n" +
-        "  revoke <token>  Deactivate a token\n" +
-        "  delete <token>  Permanently remove a token\n\n" +
+        "  add <label>          Create a relay mode token\n" +
+        "  add <label> --r2     Create an R2 mode token\n" +
+        "  list                 List all tokens\n" +
+        "  show <token>         Show token details\n" +
+        "  revoke <token>       Deactivate a token\n" +
+        "  delete <token>       Permanently remove a token\n\n" +
         "Example:\n" +
         '  npx tsx tokens-cli/tokens.ts add "leigh"\n' +
         "  npx tsx tokens-cli/tokens.ts list"
