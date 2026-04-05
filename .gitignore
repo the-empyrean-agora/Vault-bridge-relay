@@ -39,3 +39,10 @@ logs/
 .pytest_cache/
 coverage/
 .nyc_output/
+
+# Claude Code
+.claude/
+
+# pip editable install
+*.egg-info/
+client/src/*.egg-info/
