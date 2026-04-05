@@ -1,6 +1,12 @@
 name = "vault-bridge-relay"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
+account_id = "abdb5c1c82c9a2482c705596c79e4a12"
+
+workers_dev = true
+routes = [
+  { pattern = "vault-bridge.the-empyrean.com/*", zone_name = "the-empyrean.com" }
+]
 
 [observability]
 enabled = true
@@ -11,11 +17,8 @@ class_name = "VaultSession"
 
 [[kv_namespaces]]
 binding = "TOKENS"
-id = "PLACEHOLDER"
+id = "75ae1caa0ab64689a19d94f606a9a55f"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["VaultSession"]
-
-# [routes]
-# pattern = "vault-bridge.the-empyrean.com/*"
+new_sqlite_classes = ["VaultSession"]

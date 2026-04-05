@@ -34,7 +34,7 @@ if (KV_NAMESPACE_ID === "PLACEHOLDER") {
 
 function wrangler(args: string): string {
   try {
-    return execSync(`wrangler ${args}`, {
+    return execSync(`npx wrangler ${args}`, {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
@@ -46,15 +46,14 @@ function wrangler(args: string): string {
 }
 
 function kvPut(key: string, value: string): void {
-  // Use temp file to avoid shell escaping issues with JSON values
   const fs = require("node:fs");
   const os = require("node:os");
   const path = require("node:path");
   const tmpFile = path.join(os.tmpdir(), `vb-token-${Date.now()}.json`);
-  fs.writeFileSync(tmpFile, value);
+  fs.writeFileSync(tmpFile, value, "utf-8");
   try {
     wrangler(
-      `kv key put --namespace-id="${KV_NAMESPACE_ID}" "${key}" --path="${tmpFile}"`
+      `kv key put --namespace-id="${KV_NAMESPACE_ID}" "${key}" --path="${tmpFile}" --remote`
     );
   } finally {
     fs.unlinkSync(tmpFile);
@@ -64,7 +63,7 @@ function kvPut(key: string, value: string): void {
 function kvGet(key: string): string | null {
   try {
     return execSync(
-      `wrangler kv key get --namespace-id="${KV_NAMESPACE_ID}" "${key}"`,
+      `npx wrangler kv key get --namespace-id="${KV_NAMESPACE_ID}" "${key}"`,
       { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
     ).trim();
   } catch {

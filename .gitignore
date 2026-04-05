@@ -40,6 +40,9 @@ logs/
 coverage/
 .nyc_output/
 
+# Wrangler
+.wrangler/
+
 # Claude Code
 .claude/
 
