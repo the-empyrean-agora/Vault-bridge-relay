@@ -5,18 +5,19 @@ A multi-tenant relay that gives [Claude.ai](https://claude.ai) persistent remote
 ## How It Works
 
 ```
-Claude.ai  ──HTTPS/MCP──>  Relay (VPS)  ──WSS──>  Client (your machine)  ──>  Obsidian Vault
+Claude.ai  ──HTTPS/MCP──>  Cloudflare Worker  ──>  Durable Object (per user)  ──WSS──>  Client (your machine)  ──>  Obsidian Vault
 ```
 
-The relay is a stateless broker. Claude sends MCP tool requests (read file, write file, search, list directory) to the relay. The relay routes them over WebSocket to a lightweight Python client running on your machine. The client reads/writes your local vault and returns results. Vault content never persists on the relay.
+The relay is a stateless broker running on Cloudflare's edge. Claude sends MCP tool requests (read file, write file, search, list directory) to a Worker. The Worker routes them via Durable Object over WebSocket to a lightweight Python client on your machine. The client reads/writes your local vault and returns results. Vault content never persists on the relay.
+
+Durable Objects hibernate when idle — your client stays connected while you pay nothing.
 
 ## Components
 
 | Component | Language | Description |
 |---|---|---|
-| **Relay** | TypeScript (Hono) | Hosted on VPS, handles MCP ↔ WebSocket routing |
+| **Worker + DO** | TypeScript (Hono) | Cloudflare edge, handles MCP ↔ WebSocket routing |
 | **Client** | Python (pip) | Runs on your machine, connects outbound to relay |
-| **Token CLI** | TypeScript | Admin tool for managing user tokens |
 
 ## Quick Start (Client)
 
