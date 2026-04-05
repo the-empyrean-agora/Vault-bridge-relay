@@ -3,6 +3,13 @@
 ## What This Is
 Vault Bridge v2: a multi-tenant relay that gives Claude.ai persistent remote access to any user's Obsidian vault. Claude sends MCP requests to a Cloudflare Worker, which routes them via Durable Object to a lightweight Python client on the user's machine. The client reads/writes the local vault and returns results. Vault content never persists on the relay.
 
+## Status
+**Steps 1–9 complete. Deployed to production.**
+
+- Relay live at `vault-bridge.the-empyrean.com`
+- All four MCP tools working end-to-end
+- 36 tests passing (unit, integration, e2e)
+
 ## Architecture
 Two components, two languages, one platform:
 - **Relay** (TypeScript, Worker + Durable Object) — runs on Cloudflare edge, stateless broker
@@ -21,7 +28,7 @@ vault-bridge-relay/
 │   ├── src/
 │   │   ├── index.ts          # Worker entry point, Hono routing
 │   │   ├── vault-session.ts  # Durable Object — WS management, request brokering
-│   │   ├── mcp.ts            # MCP tool definitions, wired to DO
+│   │   ├── mcp.ts            # MCP JSON-RPC handler, tool definitions
 │   │   ├── auth.ts           # Token validation middleware (KV lookup)
 │   │   ├── models.ts         # TypeScript interfaces for WS messages
 │   │   └── config.ts         # Environment bindings type definitions
@@ -35,29 +42,23 @@ vault-bridge-relay/
 │   │       ├── __main__.py
 │   │       ├── cli.py        # setup, start, install-service, status
 │   │       ├── client.py     # WS connection, reconnect, dispatch
-│   │       ├── vault_ops.py  # File operations (port from v1)
+│   │       ├── vault_ops.py  # File operations (ported from v1)
 │   │       └── config.py     # ~/.vault-bridge/.env loader
+│   ├── tests/
+│   │   ├── test_vault_ops.py # 23 unit tests for file operations
+│   │   ├── test_client.py    # 5 integration tests (client ↔ mock relay)
+│   │   └── test_e2e.py       # 8 e2e tests (MCP HTTP → relay → WS → client → vault)
 │   ├── pyproject.toml
 │   └── README.md
+├── tokens-cli/               # Token manager (TypeScript, run via tsx)
+│   └── tokens.ts
 ├── docs/
-│   └── relay-architecture.md
+│   ├── relay-architecture.md # Full technical spec
+│   ├── setup-windows.md      # User setup guide (Windows)
+│   └── setup-mac.md          # User setup guide (Mac)
 ├── CLAUDE.md                 # This file
 └── README.md
 ```
-
-## Build Sequence
-Follow the 10-step sequence in `docs/relay-architecture.md`. Each step is independently testable. Do NOT skip ahead or merge steps.
-
-1. `vault_ops.py` — four file ops, unit tested, no networking
-2. `VaultSession` DO — WebSocket accept (hibernatable), handleToolCall, pending map
-3. Worker routing + auth — Hono app, `/ws`, `/mcp`, `/health`, KV token lookup
-4. `client.py` — WS loop, reconnect, dispatch to vault_ops
-5. MCP wiring — wire MCP SDK to DO's handleToolCall
-6. End-to-end test — deployed Worker + local client
-7. Token management — wrangler kv wrapper script
-8. Client pip packaging — pyproject.toml, CLI entry points
-9. Production deployment — DNS route, production tokens
-10. Onboarding — setup docs, first users
 
 ## Key Constraints
 - **v1 must not be touched.** Leigh's live vault-bridge at `vault.the-empyrean.com` stays running. v2 uses `vault-bridge.the-empyrean.com`.
@@ -65,18 +66,28 @@ Follow the 10-step sequence in `docs/relay-architecture.md`. Each step is indepe
 - **Relay is stateless.** Vault content passes through in-flight only. Never written to Cloudflare storage.
 - **Client connects outbound.** No inbound ports on user's machine. Works behind NAT.
 - **Path sanitisation required.** Client must validate all paths stay within vault root.
-- **Hibernatable WebSockets.** Use `ctx.acceptWebSocket()` not `ws.accept()` so the DO can hibernate while keeping client connected.
+- **Hibernatable WebSockets.** Use `ctx.acceptWebSocket()` so the DO can hibernate while keeping client connected.
+
+## Production Details
+- **Worker URL:** `vault-bridge-relay.leighflorescu.workers.dev`
+- **Custom domain:** `vault-bridge.the-empyrean.com`
+- **Account:** `leighflorescu@gmail.com` (Cloudflare account ID in wrangler.toml)
+- **KV namespace:** `VAULT_BRIDGE_TOKENS` (ID in wrangler.toml)
+- **Token management:** Run from `relay/` directory: `VAULT_BRIDGE_KV_NAMESPACE_ID=<id> npx tsx ../tokens-cli/tokens.ts <command>`
 
 ## v1 Reference Implementation
-Located on this machine at `C:\Vault_bridge\server.py`. The vault_ops functions should be ported from there. Auth pattern (token in query param or Bearer header) should be preserved.
+Located on this machine at `C:\Vault_bridge\server.py`. The vault_ops functions were ported from there. Auth pattern (token in query param or Bearer header) is preserved.
 
 ## Tech Stack
-- **Relay:** Cloudflare Workers, Durable Objects, Hono, @modelcontextprotocol/sdk, zod
+- **Relay:** Cloudflare Workers, Durable Objects, Hono, zod
 - **Storage:** Workers KV (token registry)
-- **Client:** Python 3.10+, websockets, python-dotenv, click/typer
+- **Client:** Python 3.10+, websockets, python-dotenv, click
 - **Deploy:** wrangler CLI
 
 ## Testing
-- Unit tests for vault_ops (Python) and VaultSession DO (TypeScript, vitest-pool-workers)
-- Integration test: client ↔ `wrangler dev`
-- End-to-end: deployed Worker + local client before production DNS cutover
+Run all client tests: `cd client && python -m pytest tests/ -v`
+- `test_vault_ops.py` — 23 unit tests for file operations + path sanitisation
+- `test_client.py` — 5 integration tests (client ↔ mock WS relay)
+- `test_e2e.py` — 8 e2e tests (full MCP HTTP → relay → WS → client → vault flow)
+
+Relay type check: `cd relay && npx tsc --noEmit`
