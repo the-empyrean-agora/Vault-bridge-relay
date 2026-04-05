@@ -40,6 +40,9 @@ logs/
 coverage/
 .nyc_output/
 
+# Local admin reference (contains tokens)
+LOCAL-ADMIN.md
+
 # Wrangler
 .wrangler/
 
