@@ -58,7 +58,11 @@ export async function readFile(
 }
 
 /**
- * Write a file to R2. Creates/overwrites.
+ * Write a file to R2 and update the sync manifest atomically.
+ *
+ * The plugin's sync algorithm uses the manifest as its source of truth for
+ * "what exists in R2", so a file write that didn't update the manifest would
+ * be invisible to the plugin and never get pulled to local.
  */
 export async function writeFile(
   bucket: R2Bucket,
@@ -68,7 +72,55 @@ export async function writeFile(
 ): Promise<string> {
   const key = `${userPrefix}/${path}`;
   await bucket.put(key, content);
+  await updateManifestEntry(bucket, userPrefix, path, content);
   return `Written: ${path}`;
+}
+
+/**
+ * Read the manifest, set/update one file entry, and write it back.
+ * Best-effort: if reading or parsing fails, start fresh rather than blocking
+ * the write that already succeeded.
+ */
+async function updateManifestEntry(
+  bucket: R2Bucket,
+  userPrefix: string,
+  path: string,
+  content: string
+): Promise<void> {
+  const manifestKey = `${userPrefix}/_vault-bridge-manifest.json`;
+
+  let manifest: {
+    files: Record<string, { hash: string; modified: string; size: number }>;
+    lastSync: string | null;
+  } = { files: {}, lastSync: null };
+
+  const existing = await bucket.get(manifestKey);
+  if (existing) {
+    try {
+      const parsed = (await existing.json()) as typeof manifest;
+      if (parsed && typeof parsed === "object" && parsed.files) {
+        manifest = parsed;
+      }
+    } catch {
+      // Corrupt manifest — start fresh rather than failing the write
+    }
+  }
+
+  const buf = new TextEncoder().encode(content);
+  const hashBuf = await crypto.subtle.digest("SHA-256", buf);
+  const hash = Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  manifest.files[path] = {
+    hash,
+    modified: new Date().toISOString(),
+    size: buf.byteLength,
+  };
+
+  await bucket.put(manifestKey, JSON.stringify(manifest), {
+    httpMetadata: { contentType: "application/json" },
+  });
 }
 
 /**
