@@ -17,14 +17,14 @@ const TOOL_DEFINITIONS = [
   {
     name: "list_directory",
     description:
-      "List the contents of a directory in the Obsidian vault. Returns sorted entries: directories first (with trailing /), then files. Hidden entries excluded.",
+      "List the immediate contents of a directory in the Obsidian vault. Returns directories first (with trailing /) then files, sorted. Hidden entries are excluded. Use this to explore unfamiliar parts of the vault. For listing files modified recently across the whole vault, use get_recent_files instead.",
     inputSchema: {
       type: "object" as const,
       properties: {
         path: {
           type: "string",
           description:
-            "Relative path to the directory (empty string for vault root)",
+            "Relative path to the directory (empty string for vault root, e.g. 'notes' or 'projects/2026')",
           default: "",
         },
       },
@@ -33,14 +33,14 @@ const TOOL_DEFINITIONS = [
   {
     name: "read_file",
     description:
-      "Read a note from the Obsidian vault by relative path.",
+      "Read the full content of a file in the vault. Use this when you know (or can guess) the exact path. Fast and exact — prefer this over search_files when you have a specific file in mind.",
     inputSchema: {
       type: "object" as const,
       properties: {
         path: {
           type: "string",
           description:
-            "Relative path to the file within the vault (e.g. 'notes/my-note.md')",
+            "Relative path to the file within the vault, including extension (e.g. 'notes/my-note.md')",
         },
       },
       required: ["path"],
@@ -49,7 +49,7 @@ const TOOL_DEFINITIONS = [
   {
     name: "write_file",
     description:
-      "Create or overwrite a note in the Obsidian vault. Creates parent directories as needed.",
+      "Create a new file or overwrite an existing one. Creates parent directories as needed. The vault index is updated immediately so the next search/get_backlinks/list_tags call will see the new file.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -67,18 +67,79 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: "delete_file",
+    description:
+      "Permanently delete a file from the vault. The deletion will sync down to the user's local Obsidian vault on its next sync. Use sparingly — there's no undo. Confirm with the user before destructive deletes.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        path: {
+          type: "string",
+          description: "Relative path of the file to delete",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
     name: "search_files",
     description:
-      "Search for files in the Obsidian vault by filename or content. Returns up to 50 results. Searches filenames first, then file contents.",
+      "Search the vault. Index-backed and fast. Supports several query forms:\n  • plain text → matches filename, tags, and content tokens (filename matches scored highest)\n  • #tagname → exact tag match (e.g. '#project')\n  • path:somefolder → files whose path starts with the given prefix\n  • filename:foo → match in filename only\n\nReturns up to 50 results, ranked by relevance, each with a short preview snippet. For very specific known paths, prefer read_file.",
     inputSchema: {
       type: "object" as const,
       properties: {
         query: {
           type: "string",
-          description: "The search term (case-insensitive)",
+          description:
+            "Search query. Case-insensitive. See description for query forms.",
         },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "get_backlinks",
+    description:
+      "Find all files that link TO the given file via wikilinks ([[...]]) or markdown links ([text](path.md)). Useful for discovering connections, building knowledge graphs, or understanding which notes reference a given concept.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        path: {
+          type: "string",
+          description:
+            "Relative path of the file to find backlinks for (e.g. 'notes/big-idea.md')",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "list_tags",
+    description:
+      "List every unique tag in the vault with usage counts, sorted by most-used first. Includes both inline tags (#tag) and frontmatter tags. Useful when the user asks 'what tags do I have' or 'what topics do I write about'.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
+    name: "get_recent_files",
+    description:
+      "List files modified in the last N days, most recent first. Useful when the user asks 'what was I working on yesterday', 'show me this week's notes', or wants to find recently-edited files without knowing their paths.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        days: {
+          type: "number",
+          description: "How many days back to look (default 7)",
+          default: 7,
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of files to return (default 25)",
+          default: 25,
+        },
+      },
     },
   },
 ];

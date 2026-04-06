@@ -91,27 +91,33 @@ app.post("/mcp", authMiddleware, async (c) => {
 
 // --- Sync API (r2 mode only — Obsidian plugin talks here) ---
 
-// Get manifest
-app.get("/sync/manifest", authMiddleware, async (c) => {
+// Get vault index. Returns an empty index if missing so the plugin can
+// start with a clean state on first sync.
+app.get("/sync/index", authMiddleware, async (c) => {
   if (c.get("tokenMode") !== "r2") {
     return c.json({ error: "Sync API requires R2 mode token" }, 400);
   }
-  const key = `${c.get("userPrefix")}/_vault-bridge-manifest.json`;
+  const key = `${c.get("userPrefix")}/_vault-bridge-index.json`;
   const object = await c.env.VAULT_BUCKET.get(key);
   if (!object) {
-    return c.json({ files: {}, lastSync: null });
+    return c.json({
+      version: 1,
+      files: {},
+      lastUpdated: new Date(0).toISOString(),
+    });
   }
   return new Response(object.body, {
     headers: { "Content-Type": "application/json" },
   });
 });
 
-// Update manifest
-app.put("/sync/manifest", authMiddleware, async (c) => {
+// Replace the vault index. The plugin builds the full index locally and
+// pushes it whole during a sync.
+app.put("/sync/index", authMiddleware, async (c) => {
   if (c.get("tokenMode") !== "r2") {
     return c.json({ error: "Sync API requires R2 mode token" }, 400);
   }
-  const key = `${c.get("userPrefix")}/_vault-bridge-manifest.json`;
+  const key = `${c.get("userPrefix")}/_vault-bridge-index.json`;
   const body = await c.req.text();
   await c.env.VAULT_BUCKET.put(key, body, {
     httpMetadata: { contentType: "application/json" },
