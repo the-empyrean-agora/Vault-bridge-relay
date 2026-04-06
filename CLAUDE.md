@@ -24,8 +24,10 @@ Claude.ai  ──HTTPS/MCP──>  Worker  ──>  Durable Object  ──WSS─
 Full spec: `docs/relay-architecture.md`
 
 ### R2 mode (for friends/family — machine can be off)
-- **Worker** (TypeScript) — reads/writes R2 directly as MCP server
-- **Obsidian Plugin** (TypeScript) — syncs local vault ↔ R2 while Obsidian is open
+- **Worker** (TypeScript, in this repo) — reads/writes R2 directly as MCP server
+- **Obsidian Plugin** (TypeScript, **separate repo**) — syncs local vault ↔ R2 while Obsidian is open
+  - Repo: https://github.com/the-empyrean-agora/vault-bridge-plugin
+  - Distributed via BRAT until accepted into Obsidian community plugin store
 ```
 Claude.ai  ──HTTPS/MCP──>  Worker  ──>  R2 Bucket  ◀──sync──  Obsidian Plugin
 ```
