@@ -10,8 +10,9 @@
  * index-format.ts and index-manager.ts.
  */
 
-import { parseFile, linkMatchesPath } from "./index-format.js";
+import { linkMatchesPath } from "./index-format.js";
 import {
+  buildEntryFromContent,
   loadIndex,
   setIndexEntry,
   removeIndexEntry,
@@ -80,23 +81,8 @@ export async function writeFile(
 ): Promise<string> {
   const key = `${userPrefix}/${path}`;
   await bucket.put(key, content);
-
-  // Update the index entry
-  const buf = new TextEncoder().encode(content);
-  const hashBuf = await crypto.subtle.digest("SHA-256", buf);
-  const hash = Array.from(new Uint8Array(hashBuf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  const filename = path.split("/").pop() ?? path;
-  const entry = parseFile(
-    content,
-    hash,
-    new Date().toISOString(),
-    buf.byteLength,
-    filename
-  );
+  const entry = await buildEntryFromContent(content, path);
   await setIndexEntry(bucket, userPrefix, path, entry);
-
   return `Written: ${path}`;
 }
 

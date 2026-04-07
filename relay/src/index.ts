@@ -6,16 +6,20 @@
  *   r2:    MCP requests served directly from R2 bucket
  *
  * Routes:
- *   GET  /ws?token=...         → WebSocket upgrade (relay mode only)
- *   POST /mcp?token=...        → MCP request (dispatches by token mode)
- *   GET  /sync/manifest        → Get sync manifest (r2 mode, plugin)
- *   PUT  /sync/manifest        → Update sync manifest (r2 mode, plugin)
- *   GET  /sync/files/*         → Download file from R2 (r2 mode, plugin)
- *   PUT  /sync/files/*         → Upload file to R2 (r2 mode, plugin)
- *   DELETE /sync/files/*       → Delete file from R2 (r2 mode, plugin)
- *   GET  /health               → 200 OK (no auth)
- *   GET  /.well-known/*        → OAuth stubs (no auth)
- *   POST /register             → OAuth stub (no auth)
+ *   GET    /ws?token=...        → WebSocket upgrade (relay mode only)
+ *   POST   /mcp?token=...       → MCP request (dispatches by token mode)
+ *   GET    /sync/index          → Read-only index fetch (r2 mode, plugin)
+ *   GET    /sync/files/*        → Download file from R2 (r2 mode, plugin)
+ *   PUT    /sync/files/*        → Upload file + update index (r2 mode, plugin)
+ *   DELETE /sync/files/*        → Delete file + remove index entry (r2 mode)
+ *   GET    /health              → 200 OK (no auth)
+ *   GET    /.well-known/*       → OAuth stubs (no auth)
+ *   POST   /register            → OAuth stub (no auth)
+ *
+ * The index is the source of truth for search/backlinks/tags. It is owned
+ * exclusively by the Worker — every file write goes through the Worker,
+ * which updates the index atomically as a side effect. The plugin never
+ * writes the index directly; it only reads it for sync diffing.
  */
 
 import { Hono } from "hono";
@@ -23,6 +27,11 @@ import type { Env } from "./config.js";
 import { authMiddleware, type AppVariables } from "./auth.js";
 import { handleMcpRequest } from "./mcp.js";
 import { handleR2ToolCall } from "./r2-ops.js";
+import {
+  buildEntryFromContent,
+  removeIndexEntry,
+  setIndexEntry,
+} from "./index-manager.js";
 
 export { VaultSession } from "./vault-session.js";
 
@@ -111,19 +120,10 @@ app.get("/sync/index", authMiddleware, async (c) => {
   });
 });
 
-// Replace the vault index. The plugin builds the full index locally and
-// pushes it whole during a sync.
-app.put("/sync/index", authMiddleware, async (c) => {
-  if (c.get("tokenMode") !== "r2") {
-    return c.json({ error: "Sync API requires R2 mode token" }, 400);
-  }
-  const key = `${c.get("userPrefix")}/_vault-bridge-index.json`;
-  const body = await c.req.text();
-  await c.env.VAULT_BUCKET.put(key, body, {
-    httpMetadata: { contentType: "application/json" },
-  });
-  return c.json({ ok: true });
-});
+// NOTE: There is intentionally no PUT /sync/index endpoint. The index is
+// owned exclusively by the Worker to prevent lost-update races between the
+// plugin and Claude's MCP writes. Every mutation to the index happens as a
+// side effect of the route that mutated the underlying file.
 
 // Download file
 app.get("/sync/files/*", authMiddleware, async (c) => {
@@ -147,7 +147,10 @@ app.get("/sync/files/*", authMiddleware, async (c) => {
   });
 });
 
-// Upload file
+// Upload file — also updates the vault index entry for this path.
+// The plugin no longer pushes the index as a separate operation; each file
+// upload carries its own index update, so plugin syncs and MCP writes
+// cannot race to clobber each other's index state.
 app.put("/sync/files/*", authMiddleware, async (c) => {
   if (c.get("tokenMode") !== "r2") {
     return c.json({ error: "Sync API requires R2 mode token" }, 400);
@@ -156,15 +159,30 @@ app.put("/sync/files/*", authMiddleware, async (c) => {
   if (!filePath) {
     return c.json({ error: "Missing file path" }, 400);
   }
-  const key = `${c.get("userPrefix")}/${decodeURIComponent(filePath)}`;
+  const decodedPath = decodeURIComponent(filePath);
+  const userPrefix = c.get("userPrefix");
+  const key = `${userPrefix}/${decodedPath}`;
+
   const body = await c.req.arrayBuffer();
   await c.env.VAULT_BUCKET.put(key, body, {
     httpMetadata: { contentType: c.req.header("Content-Type") ?? "text/markdown" },
   });
+
+  // Update the index entry for this file. Decode body as text for parsing;
+  // if decoding fails (e.g. binary attachment), skip the index update
+  // rather than failing the write.
+  try {
+    const content = new TextDecoder().decode(body);
+    const entry = await buildEntryFromContent(content, decodedPath);
+    await setIndexEntry(c.env.VAULT_BUCKET, userPrefix, decodedPath, entry);
+  } catch (err) {
+    console.warn(`[sync] Failed to update index for ${decodedPath}:`, err);
+  }
+
   return c.json({ ok: true, key });
 });
 
-// Delete file
+// Delete file — also removes the vault index entry for this path.
 app.delete("/sync/files/*", authMiddleware, async (c) => {
   if (c.get("tokenMode") !== "r2") {
     return c.json({ error: "Sync API requires R2 mode token" }, 400);
@@ -173,8 +191,17 @@ app.delete("/sync/files/*", authMiddleware, async (c) => {
   if (!filePath) {
     return c.json({ error: "Missing file path" }, 400);
   }
-  const key = `${c.get("userPrefix")}/${decodeURIComponent(filePath)}`;
+  const decodedPath = decodeURIComponent(filePath);
+  const userPrefix = c.get("userPrefix");
+  const key = `${userPrefix}/${decodedPath}`;
+
   await c.env.VAULT_BUCKET.delete(key);
+  try {
+    await removeIndexEntry(c.env.VAULT_BUCKET, userPrefix, decodedPath);
+  } catch (err) {
+    console.warn(`[sync] Failed to remove index entry for ${decodedPath}:`, err);
+  }
+
   return c.json({ ok: true });
 });
 

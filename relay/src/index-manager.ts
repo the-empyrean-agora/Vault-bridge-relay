@@ -12,6 +12,7 @@
 
 import {
   EMPTY_INDEX,
+  parseFile,
   type FileIndexEntry,
   type VaultIndex,
 } from "./index-format.js";
@@ -90,4 +91,24 @@ export async function removeIndexEntry(
     delete index.files[path];
     await saveIndex(bucket, userPrefix, index);
   }
+}
+
+/**
+ * Build a full index entry from a file's text content. Computes the SHA-256
+ * hash and runs the shared parser to extract tokens, tags, links, and preview.
+ * This matches the plugin's local computation byte-for-byte so index state
+ * stays consistent whether a write came from the plugin or from an MCP tool.
+ */
+export async function buildEntryFromContent(
+  content: string,
+  path: string,
+  modifiedISO: string = new Date().toISOString()
+): Promise<FileIndexEntry> {
+  const buf = new TextEncoder().encode(content);
+  const hashBuf = await crypto.subtle.digest("SHA-256", buf);
+  const hash = Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  const filename = path.split("/").pop() ?? path;
+  return parseFile(content, hash, modifiedISO, buf.byteLength, filename);
 }
