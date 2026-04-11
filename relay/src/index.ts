@@ -12,6 +12,9 @@
  *   GET    /sync/files/*        → Download file from R2 (r2 mode, plugin)
  *   PUT    /sync/files/*        → Upload file + update index (r2 mode, plugin)
  *   DELETE /sync/files/*        → Delete file + remove index entry (r2 mode)
+ *   GET    /secrets/:name       → Read per-user secret (JSON)
+ *   PUT    /secrets/:name       → Write per-user secret (JSON body)
+ *   DELETE /secrets/:name       → Delete per-user secret
  *   GET    /health              → 200 OK (no auth)
  *   GET    /.well-known/*       → OAuth stubs (no auth)
  *   POST   /register            → OAuth stub (no auth)
@@ -32,6 +35,11 @@ import {
   removeIndexEntry,
   setIndexEntry,
 } from "./index-manager.js";
+import {
+  handleDeleteSecret,
+  handleGetSecret,
+  handlePutSecret,
+} from "./secrets.js";
 
 export { VaultSession } from "./vault-session.js";
 
@@ -204,5 +212,11 @@ app.delete("/sync/files/*", authMiddleware, async (c) => {
 
   return c.json({ ok: true });
 });
+
+// --- Secrets API (per-user KV-backed secrets, e.g. LLM API keys) ---
+
+app.get("/secrets/:name", authMiddleware, handleGetSecret);
+app.put("/secrets/:name", authMiddleware, handlePutSecret);
+app.delete("/secrets/:name", authMiddleware, handleDeleteSecret);
 
 export default app;
