@@ -12,6 +12,11 @@
 
 import { linkMatchesPath } from "./index-format.js";
 import { buildEntryFromContent, type IndexStore } from "./index-store.js";
+import {
+  validateVaultPath,
+  assertKeyWithinPrefix,
+  isValidVaultPath,
+} from "./vault-path.js";
 
 const INTERNAL_PREFIX = "_vault-bridge-";
 
@@ -351,7 +356,8 @@ export async function moveFile(
     typeof from !== "string" || from.trim() === "" ||
     typeof to !== "string" || to.trim() === "" ||
     from === to ||
-    from.includes(INTERNAL_PREFIX) || to.includes(INTERNAL_PREFIX)
+    from.includes(INTERNAL_PREFIX) || to.includes(INTERNAL_PREFIX) ||
+    !isValidVaultPath(from) || !isValidVaultPath(to)
   ) {
     return { from, to, status: 400 };
   }
@@ -1134,6 +1140,20 @@ export async function handleR2ToolCall(
   ) {
     throw new Error("missing required argument: path");
   }
+
+  // Containment boundary: reject traversal / absolute / device-name paths on
+  // every path-bearing tool before any R2 or index access. list_directory's
+  // path is optional (empty = vault root), so it allows empty.
+  if (PATH_REQUIRED.has(tool)) {
+    validateVaultPath(params.path);
+    assertKeyWithinPrefix(vault.prefix, params.path as string);
+  }
+  if (tool === "list_directory" && params.path != null && params.path !== "") {
+    validateVaultPath(params.path);
+    assertKeyWithinPrefix(vault.prefix, params.path as string);
+  }
+  // move_file's from/to are validated inside moveFile() (deep guard), so the
+  // legible "missing required argument" checks in its case block run first.
 
   switch (tool) {
     case "begin_session":

@@ -52,6 +52,7 @@ import {
   type VaultCtx,
 } from "./r2-ops.js";
 import { buildEntryFromContent, getIndexStore } from "./index-store.js";
+import { isValidVaultPath } from "./vault-path.js";
 import {
   handleDeleteSecret,
   handleGetSecret,
@@ -228,7 +229,11 @@ app.get("/sync/files/*", authMiddleware, async (c) => {
   if (!filePath) {
     return c.json({ error: "Missing file path" }, 400);
   }
-  const key = `${c.get("userPrefix")}/${decodeURIComponent(filePath)}`;
+  const decoded = decodeURIComponent(filePath);
+  if (!isValidVaultPath(decoded)) {
+    return c.json({ error: "Invalid file path" }, 400);
+  }
+  const key = `${c.get("userPrefix")}/${decoded}`;
   const object = await c.env.VAULT_BUCKET.get(key);
   if (!object) {
     return c.json({ error: "File not found" }, 404);
@@ -254,6 +259,9 @@ app.put("/sync/files/*", authMiddleware, async (c) => {
     return c.json({ error: "Missing file path" }, 400);
   }
   const decodedPath = decodeURIComponent(filePath);
+  if (!isValidVaultPath(decodedPath)) {
+    return c.json({ error: "Invalid file path" }, 400);
+  }
   const userPrefix = c.get("userPrefix");
   const key = `${userPrefix}/${decodedPath}`;
 
@@ -307,6 +315,9 @@ app.delete("/sync/files/*", authMiddleware, async (c) => {
     return c.json({ error: "Missing file path" }, 400);
   }
   const decodedPath = decodeURIComponent(filePath);
+  if (!isValidVaultPath(decodedPath)) {
+    return c.json({ error: "Invalid file path" }, 400);
+  }
   const userPrefix = c.get("userPrefix");
   const key = `${userPrefix}/${decodedPath}`;
 
