@@ -56,34 +56,34 @@ Full step-by-step guide with a verification after every step: [docs/DEPLOY.md](d
 
 | Tool | Description |
 |---|---|
-| `begin_session()` | Return the vault's orientation file (rules/conventions). Call first. |
+| `vault_begin_session()` | Return the vault's orientation file (rules/conventions). Call first. |
 
 **Read & navigate**
 
 | Tool | Description |
 |---|---|
-| `list_directory(path)` | List vault directory contents |
-| `read_file(path)` | Read a full file |
-| `read_section(path, heading)` | Read a single section of a note |
-| `read_frontmatter(path)` | Read just a note's YAML frontmatter |
-| `search_files(query)` | Search filenames, content, and tags (up to 50 results) |
-| `get_recent_files(days, limit)` | Recently modified files |
-| `get_backlinks(path)` | Files linking TO a note |
-| `get_outgoing_links(path)` | Notes a file links OUT to |
-| `list_tags()` | All tags with usage counts |
-| `get_files_by_frontmatter(query)` | Notes matching one frontmatter condition |
-| `resolve_wikilink(link)` | `[[name]]` → the actual file path(s) |
+| `vault_list_directory(path)` | List vault directory contents |
+| `vault_read_file(path)` | Read a full file |
+| `vault_read_section(path, heading)` | Read a single section of a note |
+| `vault_read_frontmatter(path)` | Read just a note's YAML frontmatter |
+| `vault_search_files(query)` | Search filenames, content, and tags (up to 50 results) |
+| `vault_get_recent_files(days, limit)` | Recently modified files |
+| `vault_get_backlinks(path)` | Files linking TO a note |
+| `vault_get_outgoing_links(path)` | Notes a file links OUT to |
+| `vault_list_tags()` | All tags with usage counts |
+| `vault_get_files_by_frontmatter(query)` | Notes matching one frontmatter condition |
+| `vault_resolve_wikilink(link)` | `[[name]]` → the actual file path(s) |
 
 **Write & edit**
 
 | Tool | Description |
 |---|---|
-| `write_file(path, content)` | Create or overwrite a file |
-| `create_file(path, content)` | Create only — errors if the file exists |
-| `edit_range(path, old_string, new_string, replace_all?)` | Surgical exact-span replace |
-| `append_to_section(path, heading, content, position?)` | Insert content under a heading |
-| `move_file(from, to)` | Move/rename a file — metadata-only, never overwrites |
-| `delete_file(path)` | Delete a file |
+| `vault_write_file(path, content)` | Create or overwrite a file |
+| `vault_create_file(path, content)` | Create only — errors if the file exists |
+| `vault_edit_range(path, old_string, new_string, replace_all?)` | Surgical exact-span replace |
+| `vault_append_to_section(path, heading, content, position?)` | Insert content under a heading |
+| `vault_move_file(from, to)` | Move/rename a file — metadata-only, never overwrites |
+| `vault_delete_file(path)` | Delete a file |
 
 ## Components
 

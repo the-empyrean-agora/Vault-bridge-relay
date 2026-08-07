@@ -15,7 +15,7 @@ export type ToolHandler = (
 
 const TOOL_DEFINITIONS = [
   {
-    name: "begin_session",
+    name: "vault_begin_session",
     description:
       "Call this FIRST, before any other tool, at the start of every vault session. Returns the vault's orientation file — the canonical rules, conventions, folder layout, and entry ritual the user has defined for working in this vault. Reading it before you act ensures you follow their established structure instead of guessing. Cheap to call; takes no arguments.",
     inputSchema: {
@@ -24,9 +24,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "list_directory",
+    name: "vault_list_directory",
     description:
-      "List the immediate contents of a directory in the Obsidian vault. Returns directories first (with trailing /) then files, sorted. Hidden entries are excluded. Use this to explore unfamiliar parts of the vault. For listing files modified recently across the whole vault, use get_recent_files instead.",
+      "List the immediate contents of a directory in the Obsidian vault. Returns directories first (with trailing /) then files, sorted. Hidden entries are excluded. Use this to explore unfamiliar parts of the vault. For listing files modified recently across the whole vault, use vault_get_recent_files instead.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -40,9 +40,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "read_file",
+    name: "vault_read_file",
     description:
-      "Read the full content of a file in the vault. Use this when you know (or can guess) the exact path. Fast and exact — prefer this over search_files when you have a specific file in mind.",
+      "Read the full content of a file in the vault. Use this when you know (or can guess) the exact path. Fast and exact — prefer this over vault_search_files when you have a specific file in mind.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -56,9 +56,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "write_file",
+    name: "vault_write_file",
     description:
-      "Create a new file or overwrite an existing one. Creates parent directories as needed. The vault index is updated immediately so the next search/get_backlinks/list_tags call will see the new file.",
+      "Create a new file or overwrite an existing one. Creates parent directories as needed. The vault index is updated immediately so the next search/vault_get_backlinks/vault_list_tags call will see the new file.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -76,9 +76,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "edit_range",
+    name: "vault_edit_range",
     description:
-      "Make a surgical edit to an existing file by replacing an exact text span — like Claude Code's Edit tool. Prefer this over write_file for any change to an existing note: it's safer (a typo can't silently replace the whole file), cheaper (no need to resend the full content), and preserves everything outside the edited span byte-for-byte (wikilinks, frontmatter, formatting all survive). Provide enough surrounding context in old_string to match exactly once. Errors without writing if old_string is not found, or if it matches more than once and replace_all is false. If the file has YAML frontmatter with an 'updated:' field, it is auto-bumped to today's date.",
+      "Make a surgical edit to an existing file by replacing an exact text span — like Claude Code's Edit tool. Prefer this over vault_write_file for any change to an existing note: it's safer (a typo can't silently replace the whole file), cheaper (no need to resend the full content), and preserves everything outside the edited span byte-for-byte (wikilinks, frontmatter, formatting all survive). Provide enough surrounding context in old_string to match exactly once. Errors without writing if old_string is not found, or if it matches more than once and replace_all is false. If the file has YAML frontmatter with an 'updated:' field, it is auto-bumped to today's date.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -107,7 +107,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "delete_file",
+    name: "vault_delete_file",
     description:
       "Permanently delete a file from the vault. The deletion will sync down to the user's local Obsidian vault on its next sync. Use sparingly — there's no undo. Confirm with the user before destructive deletes.",
     inputSchema: {
@@ -122,9 +122,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "search_files",
+    name: "vault_search_files",
     description:
-      "Search the vault. Index-backed and fast. Supports several query forms:\n  • plain text → matches filename, tags, and content tokens (filename matches scored highest)\n  • #tagname → exact tag match (e.g. '#project')\n  • path:somefolder → files whose path starts with the given prefix\n  • filename:foo → match in filename only\n\nReturns up to 50 results, ranked by relevance, each with a short preview snippet. For very specific known paths, prefer read_file.",
+      "Search the vault. Index-backed and fast. Supports several query forms:\n  • plain text → matches filename, tags, and content tokens (filename matches scored highest)\n  • #tagname → exact tag match (e.g. '#project')\n  • path:somefolder → files whose path starts with the given prefix\n  • filename:foo → match in filename only\n\nReturns up to 50 results, ranked by relevance, each with a short preview snippet. For very specific known paths, prefer vault_read_file.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -138,7 +138,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "get_backlinks",
+    name: "vault_get_backlinks",
     description:
       "Find all files that link TO the given file via wikilinks ([[...]]) or markdown links ([text](path.md)). Useful for discovering connections, building knowledge graphs, or understanding which notes reference a given concept.",
     inputSchema: {
@@ -154,7 +154,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "list_tags",
+    name: "vault_list_tags",
     description:
       "List every unique tag in the vault with usage counts, sorted by most-used first. Includes both inline tags (#tag) and frontmatter tags. Useful when the user asks 'what tags do I have' or 'what topics do I write about'.",
     inputSchema: {
@@ -163,7 +163,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "get_recent_files",
+    name: "vault_get_recent_files",
     description:
       "List files modified in the last N days, most recent first. Useful when the user asks 'what was I working on yesterday', 'show me this week's notes', or wants to find recently-edited files without knowing their paths.",
     inputSchema: {
@@ -183,9 +183,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "get_outgoing_links",
+    name: "vault_get_outgoing_links",
     description:
-      "List the notes a file links OUT to via wikilinks ([[...]]) or markdown links ([text](path.md)). The complement of get_backlinks — together they let you walk the vault's link graph in both directions without reading file bodies.",
+      "List the notes a file links OUT to via wikilinks ([[...]]) or markdown links ([text](path.md)). The complement of vault_get_backlinks — together they let you walk the vault's link graph in both directions without reading file bodies.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -199,7 +199,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "get_files_by_frontmatter",
+    name: "vault_get_files_by_frontmatter",
     description:
       "Find notes by a single YAML frontmatter condition — structured triage the keyword search can't do. Query forms:\n  • field: value → field equals value (for list fields like tags, membership; case-insensitive)\n  • field: * → the field is present with any value\n  • field > value / field < value / field >= / field <= → comparison (ISO dates and numbers compare naturally)\nExamples: 'status: seedling', 'tags: agora', 'updated > 2026-01-01'. One condition per call. Returns matching paths with the matched value.",
     inputSchema: {
@@ -215,9 +215,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "append_to_section",
+    name: "vault_append_to_section",
     description:
-      "Add content under a specific markdown heading in an existing note, without resending the whole file. Finds the heading, then inserts at the end of its section (just before the next heading of equal or higher level) or at the start (right after the heading). Use this for the common 'add a bullet under Heading X' edit. Errors without writing if the heading is not found or matches more than once. Like edit_range, if the file has YAML frontmatter with an 'updated:' field it is auto-bumped.",
+      "Add content under a specific markdown heading in an existing note, without resending the whole file. Finds the heading, then inserts at the end of its section (just before the next heading of equal or higher level) or at the start (right after the heading). Use this for the common 'add a bullet under Heading X' edit. Errors without writing if the heading is not found or matches more than once. Like vault_edit_range, if the file has YAML frontmatter with an 'updated:' field it is auto-bumped.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -246,7 +246,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "read_section",
+    name: "vault_read_section",
     description:
       "Read a single section of a note — the heading line through to just before the next heading of equal or higher level. A token-efficient way to pull one part of a long note without reading the whole file. Errors if the heading is not found or matches more than once.",
     inputSchema: {
@@ -266,7 +266,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "read_frontmatter",
+    name: "vault_read_frontmatter",
     description:
       "Read just the YAML frontmatter (tags, status, dates, etc.) of a note, without its body — a cheap way to inspect or triage a note's metadata. Returns the frontmatter block, or a short note if the file has none.",
     inputSchema: {
@@ -281,9 +281,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "resolve_wikilink",
+    name: "vault_resolve_wikilink",
     description:
-      "Resolve an Obsidian wikilink to the actual file path(s) it points to. Accepts a bare name ('Some Note'), a folder path ('folder/Some Note'), or the full '[[...]]' form (alias and #section suffixes are ignored). Returns the matching path, or all candidates if the name is ambiguous. Removes guess-the-path errors before a read_file / edit_range.",
+      "Resolve an Obsidian wikilink to the actual file path(s) it points to. Accepts a bare name ('Some Note'), a folder path ('folder/Some Note'), or the full '[[...]]' form (alias and #section suffixes are ignored). Returns the matching path, or all candidates if the name is ambiguous. Removes guess-the-path errors before a vault_read_file / vault_edit_range.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -297,9 +297,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "create_file",
+    name: "vault_create_file",
     description:
-      "Create a NEW file, failing if one already exists at the path — the safe, create-only counterpart to write_file (which overwrites). Use this when the intent is a new note and clobbering an existing one would be a mistake. Creates parent directories as needed and updates the vault index.",
+      "Create a NEW file, failing if one already exists at the path — the safe, create-only counterpart to vault_write_file (which overwrites). Use this when the intent is a new note and clobbering an existing one would be a mistake. Creates parent directories as needed and updates the vault index.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -316,9 +316,9 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: "move_file",
+    name: "vault_move_file",
     description:
-      "Move or rename a file within the vault as a single metadata operation — the content is untouched and the search index follows automatically. Always prefer this over read + write + delete for a move: it is atomic-per-file and cannot mangle content. Fails if the source does not exist or the destination already exists (a move never overwrites). Note: wikilinks in OTHER notes are not rewritten — Obsidian resolves [[Name]] links by filename regardless of folder, so folder moves are safe, but renaming the filename itself can break links; check get_backlinks first when renaming a widely-linked note.",
+      "Move or rename a file within the vault as a single metadata operation — the content is untouched and the search index follows automatically. Always prefer this over read + write + delete for a move: it is atomic-per-file and cannot mangle content. Fails if the source does not exist or the destination already exists (a move never overwrites). Note: wikilinks in OTHER notes are not rewritten — Obsidian resolves [[Name]] links by filename regardless of folder, so folder moves are safe, but renaming the filename itself can break links; check vault_get_backlinks first when renaming a widely-linked note.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -398,18 +398,18 @@ export async function handleMcpRequest(
       // clients that support it inject this into model context at connect
       // (Claude Code surfaces it in its "MCP Server Instructions" section);
       // clients that don't simply ignore it. Keep it short — it runs every
-      // connect. It points at begin_session (Path B) rather than duplicating it.
+      // connect. It points at vault_begin_session (Path B) rather than duplicating it.
       return jsonRpcResponse(msg.id, {
         protocolVersion: "2025-03-26",
         capabilities: { tools: {} },
         serverInfo: { name: "Vault Bridge", version: "0.1.0" },
         instructions:
           "This server bridges a personal Obsidian vault. At the start of a vault " +
-          "session, call `begin_session` once before other tools — it returns the " +
+          "session, call `vault_begin_session` once before other tools — it returns the " +
           "vault's orientation file (rules, conventions, folder layout, entry ritual) " +
           "so you follow the user's established structure instead of guessing. For a " +
-          "change to an existing note prefer `edit_range` (exact-span patch) or " +
-          "`append_to_section` (add under a heading) over `write_file`, which " +
+          "change to an existing note prefer `vault_edit_range` (exact-span patch) or " +
+          "`vault_append_to_section` (add under a heading) over `vault_write_file`, which " +
           "overwrites the entire file.",
       });
 
@@ -443,17 +443,25 @@ async function handleToolsCall(
     return jsonRpcErrorResponse(msg.id!, -32602, "Missing tool name");
   }
 
-  const validTools = TOOL_DEFINITIONS.map((t) => t.name);
-  if (!validTools.includes(toolName)) {
-    return jsonRpcErrorResponse(
-      msg.id!,
-      -32602,
-      `Unknown tool: ${toolName}`
-    );
+  // Public tool names are `vault_`-prefixed so they don't collide with a
+  // filesystem MCP server (which also exposes read_file/write_file/etc.) mounted
+  // over the same vault. The handlers below (R2 ops, relay client) use the bare
+  // internal names, so we resolve to the public name then strip the prefix here,
+  // in the one place both modes funnel through. Bare names are still accepted for
+  // leniency, so an older cached caller doesn't break.
+  const validTools = new Set(TOOL_DEFINITIONS.map((t) => t.name));
+  const publicName = validTools.has(toolName)
+    ? toolName
+    : validTools.has(`vault_${toolName}`)
+      ? `vault_${toolName}`
+      : null;
+  if (!publicName) {
+    return jsonRpcErrorResponse(msg.id!, -32602, `Unknown tool: ${toolName}`);
   }
+  const internalName = publicName.slice("vault_".length);
 
   try {
-    const result = await toolHandler(toolName, toolArgs);
+    const result = await toolHandler(internalName, toolArgs);
     return jsonRpcResponse(msg.id!, {
       content: [{ type: "text", text: result }],
     });

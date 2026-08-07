@@ -19,7 +19,7 @@ Claude  ──HTTPS/MCP──>  Worker  ──>  Durable Object  ──WSS──
 ```
 
 ## Status
-- **18 MCP tools**, identical signatures in both modes: `begin_session`, `list_directory`, `read_file`, `read_section`, `read_frontmatter`, `write_file`, `create_file`, `edit_range`, `append_to_section`, `delete_file`, `move_file`, `search_files`, `get_backlinks`, `get_outgoing_links`, `list_tags`, `get_recent_files`, `get_files_by_frontmatter`, `resolve_wikilink`
+- **18 MCP tools**, identical signatures in both modes: `vault_begin_session`, `vault_list_directory`, `vault_read_file`, `vault_read_section`, `vault_read_frontmatter`, `vault_write_file`, `vault_create_file`, `vault_edit_range`, `vault_append_to_section`, `vault_delete_file`, `vault_move_file`, `vault_search_files`, `vault_get_backlinks`, `vault_get_outgoing_links`, `vault_list_tags`, `vault_get_recent_files`, `vault_get_files_by_frontmatter`, `vault_resolve_wikilink`
 - OAuth 2.1 layer (dynamic client registration + PKCE) so the MCP endpoint can be added as a Claude connector without a token in the URL
 - Relay (R2 mode) tests: `vitest` in `relay/test/` + `tsc --noEmit`
 - Client (relay mode) tests: pytest in `client/tests/` (103 tests)
@@ -53,7 +53,7 @@ vault-bridge-relay/
 ## Key Constraints
 - **The MCP interface is identical across modes.** Adding or changing a tool touches the Worker, the Python client (parity), and both test suites — never just one side.
 - **R2 mode: the vault index is owned by `VaultIndexDO`** (per-user SQLite Durable Object, keyed by prefix). The R2 blob `_vault-bridge-index.json` is a debounced recovery snapshot only. Clients never write the index.
-- **Concurrency guards are load-bearing.** `/sync/files/*` honours `If-Match`/`If-None-Match` against the index content-hash (412 on mismatch); `write_file` does CAS on the R2 etag; MCP mutations stamp a 25 s write-lease surfaced to the plugin as `X-Remote-Write-Active`. Don't weaken any of these — they close real data-loss races.
+- **Concurrency guards are load-bearing.** `/sync/files/*` honours `If-Match`/`If-None-Match` against the index content-hash (412 on mismatch); `vault_write_file` does CAS on the R2 etag; MCP mutations stamp a 25 s write-lease surfaced to the plugin as `X-Remote-Write-Active`. Don't weaken any of these — they close real data-loss races.
 - **`compatibility_date` stays `2024-12-01`.** Later dates change WebSocket close/binary semantics relay mode depends on.
 - **One token per vault. Always.** The token IS the vault's identity — it maps directly to an R2 prefix. The same token pasted into two different Obsidian vaults merges them bidirectionally on first sync.
 - **Relay mode is stateless; R2 mode stores vault content** under user-prefixed keys in the operator's bucket.
