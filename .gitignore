@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Secrets
+tokens.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+relay/dist/
+client/dist/
+client/build/
+
+# Logs
+*.log
+logs/
+
+# Test
+.pytest_cache/
+coverage/
+.nyc_output/
+
+# Local admin reference (contains tokens)
+LOCAL-ADMIN.md
+
+# Instance config — copy relay/wrangler.toml.example → relay/wrangler.toml and fill in
+relay/wrangler.toml
+
+# Internal work-log and design docs (local + private archive only; public docs are written fresh)
+PENDING.md
+docs/relay-architecture.md
+docs/r2-architecture.md
+docs/setup-windows.md
+docs/setup-mac.md
+docs/sync-concurrency-spec.md
+docs/sync-hardening-brief.md
+docs/v2-upgrade-brief.md
+
+# Wrangler
+.wrangler/
+
+# Claude Code
+.claude/
+
+# pip editable install
+*.egg-info/
+client/src/*.egg-info/
