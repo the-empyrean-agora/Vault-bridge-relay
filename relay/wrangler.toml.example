@@ -22,6 +22,12 @@ workers_dev = true
 [observability]
 enabled = true
 
+[vars]
+# IANA timezone used to date-stamp `updated:` frontmatter on MCP writes.
+# MCP writes come from Claude, not the plugin, so the vault's local date can
+# only be resolved here. Defaults to UTC if omitted. Example: "Australia/Melbourne".
+VAULT_TZ = "UTC"
+
 [[durable_objects.bindings]]
 name = "VAULT_SESSION"
 class_name = "VaultSession"

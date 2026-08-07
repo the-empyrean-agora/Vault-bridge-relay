@@ -50,8 +50,10 @@ describe("get_outgoing_links", () => {
 
 describe("get_files_by_frontmatter", () => {
   async function seed(bucket: MockBucket) {
-    await writeFile(vault(bucket), "n1.md", "---\nstatus: seedling\nupdated: 2026-06-10\ntags: [agora, idea]\n---\n\nOne.");
-    await writeFile(vault(bucket), "n2.md", "---\nstatus: growing\nupdated: 2025-01-01\n---\n\nTwo.");
+    // `due:` is a static date field (write_file bumps `updated:`, so we can't
+    // assert on a seeded `updated:` value — see the timezone-bump tests).
+    await writeFile(vault(bucket), "n1.md", "---\nstatus: seedling\ndue: 2026-06-10\ntags: [agora, idea]\n---\n\nOne.");
+    await writeFile(vault(bucket), "n2.md", "---\nstatus: growing\ndue: 2025-01-01\n---\n\nTwo.");
     await writeFile(vault(bucket), "n3.md", "---\nstatus: seedling\n---\n\nThree.");
     await writeFile(vault(bucket), "plain.md", "No frontmatter here.");
   }
@@ -79,7 +81,7 @@ describe("get_files_by_frontmatter", () => {
   it("supports ISO-date comparison", async () => {
     const bucket = makeBucket({});
     await seed(bucket);
-    const r = await getFilesByFrontmatter(vault(bucket), "updated > 2026-01-01");
+    const r = await getFilesByFrontmatter(vault(bucket), "due > 2026-01-01");
     expect(r).toContain("n1.md");
     expect(r).not.toContain("n2.md");
   });
@@ -186,10 +188,13 @@ describe("append_to_section", () => {
   it("errors without writing when the heading is not found", async () => {
     const bucket = makeBucket({});
     await writeFile(vault(bucket), "d.md", DOC);
+    // write_file may bump `updated:` on seed, so compare against what it stored,
+    // not the raw DOC — the point is that the FAILED append writes nothing.
+    const seeded = bucket.store.get(k("d.md"))!;
     await expect(
       appendToSection(vault(bucket), "d.md", "Ghost", "x", "end")
     ).rejects.toThrow("heading not found");
-    expect(bucket.store.get(k("d.md"))).toBe(DOC);
+    expect(bucket.store.get(k("d.md"))).toBe(seeded);
   });
 
   it("errors when the heading is not unique", async () => {

@@ -21,6 +21,22 @@ import {
 const INTERNAL_PREFIX = "_vault-bridge-";
 
 /**
+ * Conflict copies the plugin writes on a sync collision (`<name>.conflict.md`).
+ * They are near-duplicates of real notes, so index-backed queries must skip them
+ * or they surface as phantom duplicates in search, backlinks, and tag counts.
+ * They stay in R2 and in list_directory, so the user can still find and resolve
+ * them — they're just excluded from the semantic index views.
+ */
+function isConflictPath(path: string): boolean {
+  return /\.conflict\.md$/i.test(path);
+}
+
+/** Index entries with conflict copies removed — the set index-backed readers query. */
+function nonConflictEntries<T>(files: Record<string, T>): Array<[string, T]> {
+  return Object.entries(files).filter(([p]) => !isConflictPath(p));
+}
+
+/**
  * Per-request vault context: the R2 bucket (content), the user's key prefix,
  * and the index store (per-user Durable Object in production; in-memory in
  * tests). Every tool function takes this as its first argument. MCP-path
@@ -31,6 +47,12 @@ export interface VaultCtx {
   bucket: R2Bucket;
   prefix: string;
   index: IndexStore;
+  /**
+   * IANA timezone for date-only frontmatter stamps (e.g. "Australia/Melbourne").
+   * MCP writes come from Claude, not the plugin, so the vault's local date can
+   * only be resolved server-side. Defaults to UTC when unset.
+   */
+  timezone?: string;
 }
 
 // --- Tools ---
@@ -125,10 +147,13 @@ export async function writeFile(
   content: string
 ): Promise<string> {
   const key = `${vault.prefix}/${path}`;
+  // Bump `updated:` like edit_range/append_to_section do — an MCP write_file is
+  // a modification, so the data contract's date field must move with it.
+  const toWrite = bumpUpdatedFrontmatter(content, vault.timezone);
   const existing = await vault.bucket.head(key);
   const put = await vault.bucket.put(
     key,
-    content,
+    toWrite,
     existing ? { onlyIf: { etagMatches: existing.etag } } : undefined
   );
   if (put === null) {
@@ -136,7 +161,7 @@ export async function writeFile(
       `${path} changed since you read it (a concurrent write landed) — re-read the file and retry`
     );
   }
-  const entry = await buildEntryFromContent(content, path);
+  const entry = await buildEntryFromContent(toWrite, path);
   await vault.index.setEntry(path, entry, { remoteWrite: true });
   return `Written: ${path}`;
 }
@@ -175,23 +200,37 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-/** Today's date as ISO YYYY-MM-DD (UTC). */
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * Today's date as YYYY-MM-DD in the given IANA timezone (default UTC).
+ * `en-CA` formats as YYYY-MM-DD. An unknown timezone id must never abort a
+ * write, so we fall back to UTC on error.
+ */
+function todayInTz(timezone = "UTC"): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
 }
 
 /**
  * If the content opens with YAML frontmatter containing an `updated:` field,
- * set that field to today's date. Returns the content unchanged when there is
- * no frontmatter or no `updated:` field — we never inject frontmatter.
+ * set that field to today's date in the vault's timezone. Returns the content
+ * unchanged when there is no frontmatter or no `updated:` field — we never
+ * inject frontmatter.
  */
-function bumpUpdatedFrontmatter(content: string): string {
+function bumpUpdatedFrontmatter(content: string, timezone = "UTC"): string {
   const fm = content.match(/^---\n([\s\S]*?)\n---/);
   if (!fm) return content;
   const block = fm[0];
   const updatedRe = /^(updated:[ \t]*).*$/m;
   if (!updatedRe.test(block)) return content;
-  const newBlock = block.replace(updatedRe, `$1${todayISO()}`);
+  const newBlock = block.replace(updatedRe, `$1${todayInTz(timezone)}`);
   return newBlock + content.slice(block.length);
 }
 
@@ -288,7 +327,7 @@ export async function editRange(
       const idx = content.indexOf(old);
       next = content.slice(0, idx) + replacement + content.slice(idx + old.length);
     }
-    return bumpUpdatedFrontmatter(next);
+    return bumpUpdatedFrontmatter(next, vault.timezone);
   });
 
   const entry = await buildEntryFromContent(updated, path);
@@ -412,7 +451,7 @@ export async function moveFile(
  *   "filename:foo"  → filename token match only
  */
 export async function searchFiles(vault: VaultCtx, query: string): Promise<string> {
-  const fileEntries = Object.entries(await vault.index.allEntries());
+  const fileEntries = nonConflictEntries(await vault.index.allEntries());
 
   if (fileEntries.length === 0) {
     return "Search index is empty. Open Obsidian on a device with the Vault Bridge plugin to populate the index, or write any file to seed it.";
@@ -529,7 +568,7 @@ export async function getBacklinks(vault: VaultCtx, path: string): Promise<strin
   const files = await vault.index.allEntries();
   const backlinks: string[] = [];
 
-  for (const [filePath, entry] of Object.entries(files)) {
+  for (const [filePath, entry] of nonConflictEntries(files)) {
     if (filePath === path) continue;
     for (const link of entry.links) {
       if (linkMatchesPath(link, path)) {
@@ -552,7 +591,7 @@ export async function listTags(vault: VaultCtx): Promise<string> {
   const files = await vault.index.allEntries();
 
   const counts = new Map<string, number>();
-  for (const entry of Object.values(files)) {
+  for (const [, entry] of nonConflictEntries(files)) {
     for (const tag of entry.tags) {
       counts.set(tag, (counts.get(tag) ?? 0) + 1);
     }
@@ -579,7 +618,7 @@ export async function getRecentFiles(
   const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
 
   const recent: Array<{ path: string; modified: string }> = [];
-  for (const [path, entry] of Object.entries(files)) {
+  for (const [path, entry] of nonConflictEntries(files)) {
     const t = Date.parse(entry.modified);
     if (!isNaN(t) && t >= cutoffMs) {
       recent.push({ path, modified: entry.modified });
@@ -676,12 +715,40 @@ function parseFrontmatter(block: string): Record<string, string | string[]> {
   return out;
 }
 
-/** Compare two scalars numerically when both parse as numbers, else lexically. */
-function compareScalar(a: string, b: string): number {
-  const na = Number(a);
-  const nb = Number(b);
-  if (!isNaN(na) && !isNaN(nb)) return na - nb;
-  return a < b ? -1 : a > b ? 1 : 0;
+/** A strict ISO date (YYYY-MM-DD, optionally with a time) → epoch ms, else null. */
+function asDate(s: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?/.test(s.trim())) return null;
+  const t = Date.parse(s.trim());
+  return isNaN(t) ? null : t;
+}
+
+/** A finite number (rejecting "" / whitespace, which Number() coerces to 0), else null. */
+function asNumber(s: string): number | null {
+  if (s.trim() === "") return null;
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * Ordered comparison of a field value against a query value, TYPED BY THE QUERY.
+ * Returns null ("not comparable") when the query asks for a date or number but
+ * the field value isn't one — so `updated > 2026-08-01` can never match a
+ * placeholder like `YYYY-MM-DD` (which used to win on raw string compare because
+ * 'Y' sorts above '2'). Only when the query value is a plain string do we fall
+ * back to lexical ordering.
+ */
+function compareScalar(fieldVal: string, queryVal: string): number | null {
+  const qd = asDate(queryVal);
+  if (qd !== null) {
+    const fd = asDate(fieldVal);
+    return fd === null ? null : fd - qd;
+  }
+  const qn = asNumber(queryVal);
+  if (qn !== null) {
+    const fn = asNumber(fieldVal);
+    return fn === null ? null : fn - qn;
+  }
+  return fieldVal < queryVal ? -1 : fieldVal > queryVal ? 1 : 0;
 }
 
 function matchesCondition(
@@ -705,6 +772,8 @@ function matchesCondition(
   // Comparison ops act on the (first) scalar value.
   const v = String(values[0]);
   const cmp = compareScalar(v, cond.value);
+  // null = not comparable (e.g. a non-date value against a date query) → no match.
+  if (cmp === null) return { ok: false, matched: "" };
   const ok =
     (cond.op === ">" && cmp > 0) ||
     (cond.op === "<" && cmp < 0) ||
@@ -760,7 +829,7 @@ export async function getFilesByFrontmatter(
   }
 
   const files = await vault.index.allEntries();
-  const candidates = Object.entries(files)
+  const candidates = nonConflictEntries(files)
     .filter(([p]) => p.endsWith(".md"))
     .map(([p, e]) => ({ path: p, size: e.size ?? 0 }));
   if (candidates.length === 0) {
@@ -902,7 +971,7 @@ export async function appendToSection(
 
     let next = merged.join("\n");
     if (!next.endsWith("\n")) next += "\n";
-    return bumpUpdatedFrontmatter(next);
+    return bumpUpdatedFrontmatter(next, vault.timezone);
   });
 
   const entry = await buildEntryFromContent(updated, path);
@@ -1000,8 +1069,8 @@ export async function resolveWikilink(
   }
 
   const files = await vault.index.allEntries();
-  const matches = Object.keys(files).filter((p) =>
-    linkMatchesPath(cleaned, p)
+  const matches = Object.keys(files).filter(
+    (p) => !isConflictPath(p) && linkMatchesPath(cleaned, p)
   );
   if (matches.length === 0) {
     return `No file resolves to [[${cleaned}]].`;
@@ -1029,8 +1098,11 @@ export async function createFile(
   if (existing) {
     throw new Error(`File already exists: ${path} (use write_file to overwrite)`);
   }
-  await vault.bucket.put(key, content);
-  const entry = await buildEntryFromContent(content, path);
+  // Creating a note is a modification too — stamp `updated:` if present, for
+  // parity with write_file/edit_range.
+  const toWrite = bumpUpdatedFrontmatter(content, vault.timezone);
+  await vault.bucket.put(key, toWrite);
+  const entry = await buildEntryFromContent(toWrite, path);
   await vault.index.setEntry(path, entry, { remoteWrite: true });
   return `Created: ${path}`;
 }

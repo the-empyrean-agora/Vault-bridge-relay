@@ -68,6 +68,7 @@ function vaultCtx(env: Env, userPrefix: string): VaultCtx {
     bucket: env.VAULT_BUCKET,
     prefix: userPrefix,
     index: getIndexStore(env, userPrefix),
+    timezone: env.VAULT_TZ || "UTC",
   };
 }
 
