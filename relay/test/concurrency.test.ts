@@ -99,7 +99,7 @@ describe("editRange CAS — a write landing mid-edit", () => {
       return realPut(key, value, opts);
     };
     const res = await editRange(vault(bucket), "n.md", "TARGET", "REPLACED", false);
-    expect(res).toBe("Edited: n.md");
+    expect(res).toContain("Edited n.md");
     const out = bucket.store.get(k("n.md"))!;
     expect(out).toContain("REPLACED");
     expect(out).toContain("plus a concurrent line"); // racer's edit preserved

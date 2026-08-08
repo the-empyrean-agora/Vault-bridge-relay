@@ -10,7 +10,7 @@
  * index-format.ts and index-manager.ts.
  */
 
-import { linkMatchesPath } from "./index-format.js";
+import { linkMatchesPath, tokenize } from "./index-format.js";
 import { buildEntryFromContent, type IndexStore } from "./index-store.js";
 import {
   validateVaultPath,
@@ -163,7 +163,7 @@ export async function writeFile(
   }
   const entry = await buildEntryFromContent(toWrite, path);
   await vault.index.setEntry(path, entry, { remoteWrite: true });
-  return `Written: ${path}`;
+  return `${existing ? "Overwrote" : "Created"} ${path}: ${toWrite.split("\n").length} lines, ${toWrite.length} chars.`;
 }
 
 /**
@@ -198,6 +198,11 @@ function countOccurrences(haystack: string, needle: string): number {
     idx = haystack.indexOf(needle, idx + needle.length);
   }
   return count;
+}
+
+/** Format a signed integer delta for change summaries: 5 → "+5", -3 → "-3". */
+function signed(n: number): string {
+  return n >= 0 ? `+${n}` : `${n}`;
 }
 
 /**
@@ -333,9 +338,23 @@ export async function editRange(
   const entry = await buildEntryFromContent(updated, path);
   await vault.index.setEntry(path, entry, { remoteWrite: true });
 
-  return replaceAll && count > 1
-    ? `Edited: ${path} (${count} occurrences)`
-    : `Edited: ${path}`;
+  // Change summary so a malformed edit is visible on the spot rather than
+  // surfacing indirectly two calls later.
+  const oldNl = (old.match(/\n/g) ?? []).length;
+  const newNl = (replacement.match(/\n/g) ?? []).length;
+  const lineDelta = count * (newNl - oldNl);
+  const charDelta = count * (replacement.length - old.length);
+  const occ = replaceAll && count > 1 ? ` (${count} occurrences)` : "";
+  let msg = `Edited ${path}${occ}: ${signed(lineDelta)} lines, ${signed(charDelta)} chars.`;
+  // Accidental-insert guard: if new_string still CONTAINS old_string, the edit
+  // added text around it rather than replacing it — the usual way a delete gets
+  // expressed backwards (text placed in new_string instead of old_string).
+  if (replacement !== old && replacement.includes(old)) {
+    msg +=
+      " Note: new_string contains old_string, so text was ADDED around it, not" +
+      " replaced. To delete text, put it in old_string and leave new_string empty.";
+  }
+  return msg;
 }
 
 /**
@@ -485,66 +504,72 @@ export async function searchFiles(vault: VaultCtx, query: string): Promise<strin
 
   // --- Filename-only query: filename:foo ---
   if (trimmed.toLowerCase().startsWith("filename:")) {
-    const term = trimmed.slice(9).trim().toLowerCase();
-    const queryTokens = term.split(/\s+/).filter((t) => t.length > 0);
-    const scored = fileEntries
-      .map(([path, entry]) => {
-        let score = 0;
-        for (const qt of queryTokens) {
-          for (const ft of entry.filenameTokens) {
-            if (ft.includes(qt)) score += 1;
-          }
-        }
-        return { path, score, preview: entry.preview };
+    const term = trimmed.slice(9).trim();
+    // Tokenise the query the same way filenames are indexed (splits on hyphens
+    // and other non-word chars), then require every sub-token to appear in the
+    // basename. So `filename:process-log` matches `process-log.md` even though
+    // the hyphen splits it — the old code compared the whole hyphenated term
+    // against already-split tokens and never matched.
+    const qTokens = tokenize(term);
+    if (qTokens.length === 0) {
+      return "Enter at least one search term after 'filename:'.";
+    }
+    const matches = fileEntries
+      .map(([path]) => path)
+      .filter((path) => {
+        const base = (path.split("/").pop() ?? path).toLowerCase();
+        return qTokens.every((qt) => base.includes(qt));
       })
-      .filter((r) => r.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 50);
-    if (scored.length === 0) return `No filename matches for '${term}'`;
-    return `${scored.length} filename match(es):\n${scored.map((r) => r.path).join("\n")}`;
+      .sort();
+    if (matches.length === 0) return `No filename matches for '${term}'`;
+    const top = matches.slice(0, 50);
+    return `${matches.length} filename match(es)${matches.length > 50 ? " (showing first 50)" : ""}:\n${top.join("\n")}`;
   }
 
-  // --- Default: full-text token search ---
-  const queryTokens = trimmed.toLowerCase().split(/\s+/).filter((t) => t.length > 0);
-  const scored: Array<{ path: string; score: number; reason: string; preview: string }> = [];
+  // --- Default: full-text search, ranked by query-token COVERAGE ---
+  // Tokenise the query the same way the index is built, so query and content
+  // agree on word boundaries and stopwords.
+  const queryTokens = tokenize(trimmed);
+  if (queryTokens.length === 0) {
+    return `No searchable terms in '${query}'. Try a #tag, path:prefix, or filename: query.`;
+  }
+
+  const scored: Array<{
+    path: string;
+    coverage: number;
+    weight: number;
+    reason: string;
+    preview: string;
+  }> = [];
 
   for (const [path, entry] of fileEntries) {
-    let score = 0;
+    const matched = new Set<string>();
+    let weight = 0;
     let reason = "";
-
-    // Filename match — highest signal
     for (const qt of queryTokens) {
-      for (const ft of entry.filenameTokens) {
-        if (ft.includes(qt)) {
-          score += 100;
-          if (!reason) reason = "filename";
-        }
+      // Count each query token once per doc, at its highest-signal location.
+      if (entry.filenameTokens.some((ft) => ft.includes(qt))) {
+        weight += 100;
+        matched.add(qt);
+        if (!reason) reason = "filename";
+      } else if (entry.tags.some((tag) => tag.includes(qt))) {
+        weight += 50;
+        matched.add(qt);
+        if (!reason) reason = "tag";
+      } else if (entry.tokens.some((ct) => ct.includes(qt))) {
+        weight += 5;
+        matched.add(qt);
+        if (!reason) reason = "content";
       }
     }
-
-    // Tag match — high signal
-    for (const qt of queryTokens) {
-      for (const tag of entry.tags) {
-        if (tag.includes(qt)) {
-          score += 50;
-          if (!reason) reason = "tag";
-        }
-      }
-    }
-
-    // Content token match — count each query token at most once per file
-    for (const qt of queryTokens) {
-      for (const ct of entry.tokens) {
-        if (ct.includes(qt)) {
-          score += 1;
-          if (!reason) reason = "content";
-          break;
-        }
-      }
-    }
-
-    if (score > 0) {
-      scored.push({ path, score, reason, preview: entry.preview });
+    if (matched.size > 0) {
+      scored.push({
+        path,
+        coverage: matched.size,
+        weight,
+        reason,
+        preview: entry.preview,
+      });
     }
   }
 
@@ -552,11 +577,16 @@ export async function searchFiles(vault: VaultCtx, query: string): Promise<strin
     return `No results found for: ${query}`;
   }
 
-  scored.sort((a, b) => b.score - a.score);
+  // Coverage first: a note matching all query terms beats one that matches a
+  // single common term many times (the old OR-scoring buried the right answer).
+  // Weight (filename > tag > content) only breaks ties within equal coverage,
+  // so a lone weak tag hit can no longer top a multi-term content match.
+  scored.sort((a, b) => b.coverage - a.coverage || b.weight - a.weight);
   const top = scored.slice(0, 50);
+  const n = queryTokens.length;
 
   const lines = top.map(
-    (r) => `[${r.reason}] ${r.path}\n  ${r.preview || "(no preview)"}`
+    (r) => `[${r.coverage}/${n} ${r.reason}] ${r.path}\n  ${r.preview || "(no preview)"}`
   );
   return `Found ${scored.length} result(s) for '${query}'${scored.length > 50 ? " (showing top 50 by relevance)" : ""}:\n${lines.join("\n")}`;
 }
@@ -977,7 +1007,7 @@ export async function appendToSection(
   const entry = await buildEntryFromContent(updated, path);
   await vault.index.setEntry(path, entry, { remoteWrite: true });
 
-  return `Appended to "${wanted}" in ${path}`;
+  return `Appended ${addLines.length} line(s) under "${wanted}" in ${path}.`;
 }
 
 /**
@@ -1104,7 +1134,7 @@ export async function createFile(
   await vault.bucket.put(key, toWrite);
   const entry = await buildEntryFromContent(toWrite, path);
   await vault.index.setEntry(path, entry, { remoteWrite: true });
-  return `Created: ${path}`;
+  return `Created ${path}: ${toWrite.split("\n").length} lines, ${toWrite.length} chars.`;
 }
 
 // --- Version-guard for the plugin sync path (optimistic concurrency) ---

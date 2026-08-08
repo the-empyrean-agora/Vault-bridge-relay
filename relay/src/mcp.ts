@@ -78,7 +78,7 @@ const TOOL_DEFINITIONS = [
   {
     name: "vault_edit_range",
     description:
-      "Make a surgical edit to an existing file by replacing an exact text span — like Claude Code's Edit tool. Prefer this over vault_write_file for any change to an existing note: it's safer (a typo can't silently replace the whole file), cheaper (no need to resend the full content), and preserves everything outside the edited span byte-for-byte (wikilinks, frontmatter, formatting all survive). Provide enough surrounding context in old_string to match exactly once. Errors without writing if old_string is not found, or if it matches more than once and replace_all is false. If the file has YAML frontmatter with an 'updated:' field, it is auto-bumped to today's date.",
+      "Make a surgical edit to an existing file by replacing an exact text span — like Claude Code's Edit tool. Prefer this over vault_write_file for any change to an existing note: it's safer (a typo can't silently replace the whole file), cheaper (no need to resend the full content), and preserves everything outside the edited span byte-for-byte (wikilinks, frontmatter, formatting all survive). Provide enough surrounding context in old_string to match exactly once. Errors without writing if old_string is not found, or if it matches more than once and replace_all is false. To DELETE text, put it in old_string and leave new_string empty (\"\"). Returns a change summary (lines/chars added or removed) so you can confirm the edit did what you intended. If the file has YAML frontmatter with an 'updated:' field, it is auto-bumped to today's date.",
     inputSchema: {
       type: "object" as const,
       properties: {

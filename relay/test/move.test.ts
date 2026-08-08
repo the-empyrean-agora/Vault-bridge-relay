@@ -154,7 +154,7 @@ describe("writeFile CAS — overwrites are no longer blind", () => {
   it("creates a new file unconditionally", async () => {
     const bucket = makeBucket({});
     const out = await writeFile(vault(bucket), "new.md", "fresh");
-    expect(out).toBe("Written: new.md");
+    expect(out).toMatch(/(Created|Overwrote) new\.md:/);
     expect(bucket.store.get(k("new.md"))).toBe("fresh");
   });
 

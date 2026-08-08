@@ -48,7 +48,7 @@ const STOPWORDS = new Set([
   "with", "from", "as", "if", "so", "no", "not", "but",
 ]);
 
-function tokenize(text: string): string[] {
+export function tokenize(text: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   const tokens = text.toLowerCase().split(/[^\w]+/);
@@ -163,15 +163,22 @@ export function parseFile(
   size: number,
   filename: string
 ): FileIndexEntry {
+  // Normalise line endings (CRLF/lone CR → LF) and Unicode (→ NFC) BEFORE
+  // extraction. The frontmatter/preview regexes anchor on \n, so a CRLF file
+  // (~5% of a Windows-authored vault) would otherwise yield zero tags and an
+  // unstripped preview. Only the extracted text is normalised — `hash` and
+  // `size` are computed by the caller on the original bytes so they stay
+  // identical to the plugin's computation (CAS / If-Match depend on that).
+  const text = content.replace(/\r\n?/g, "\n").normalize("NFC");
   return {
     hash,
     modified,
     size,
-    preview: extractPreview(content),
-    tokens: tokenize(content),
+    preview: extractPreview(text),
+    tokens: tokenize(text),
     filenameTokens: tokenize(filename),
-    tags: extractTags(content),
-    links: extractLinks(content),
+    tags: extractTags(text),
+    links: extractLinks(text),
   };
 }
 

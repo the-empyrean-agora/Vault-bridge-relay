@@ -150,7 +150,7 @@ describe("append_to_section", () => {
     const bucket = makeBucket({});
     await writeFile(vault(bucket), "d.md", DOC);
     const res = await appendToSection(vault(bucket), "d.md", "Tasks", "- three", "end");
-    expect(res).toBe('Appended to "Tasks" in d.md');
+    expect(res).toContain('under "Tasks" in d.md');
     const out = bucket.store.get(k("d.md"))!;
     expect(out.indexOf("- two")).toBeLessThan(out.indexOf("- three"));
     expect(out.indexOf("- three")).toBeLessThan(out.indexOf("## Notes"));
@@ -213,7 +213,7 @@ describe("append_to_section", () => {
       heading: "Notes",
       content: "Via dispatch.",
     });
-    expect(res).toBe('Appended to "Notes" in d.md');
+    expect(res).toContain('under "Notes" in d.md');
     expect(bucket.store.get(k("d.md"))!).toContain("Via dispatch.");
   });
 });
@@ -319,7 +319,7 @@ describe("create_file", () => {
   it("creates a new file and indexes it", async () => {
     const bucket = makeBucket({});
     const res = await createFile(vault(bucket), "new.md", "---\ntags: [x]\n---\n\nHi.");
-    expect(res).toBe("Created: new.md");
+    expect(res).toContain("Created new.md");
     expect(bucket.store.get(k("new.md"))).toContain("Hi.");
     expect(indexStoreFor(bucket).files.get("new.md")).toBeTruthy();
   });

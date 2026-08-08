@@ -60,7 +60,7 @@ describe("editRange", () => {
       "# New Heading",
       false
     );
-    expect(result).toBe("Edited: notes/test.md");
+    expect(result).toContain("Edited notes/test.md");
 
     const out = bucket.store.get(KEY)!;
     // Exact reconstruction: only the heading and the updated date change.
@@ -95,7 +95,7 @@ describe("editRange", () => {
       "A lazy dog.",
       true
     );
-    expect(result).toBe("Edited: notes/test.md (2 occurrences)");
+    expect(result).toContain("Edited notes/test.md (2 occurrences)");
 
     const out = bucket.store.get(KEY)!;
     expect((out.match(/A lazy dog\./g) ?? []).length).toBe(2);
@@ -140,7 +140,7 @@ describe("editRange", () => {
       "# Heading\n\nSee [[Other Note]], [[folder/Third]], and [[New]].",
       false
     );
-    expect(result).toBe("Edited: notes/test.md");
+    expect(result).toContain("Edited notes/test.md");
 
     const out = bucket.store.get(KEY)!;
     expect(out).toContain("[[New]]");
@@ -160,7 +160,7 @@ describe("editRange", () => {
       "surfaces ||",
       false
     );
-    expect(result).toBe("Edited: notes/test.md");
+    expect(result).toContain("Edited notes/test.md");
     expect(bucket.store.get(KEY)!).toBe(
       "alpha line\nbeta surfaces || gamma\ndelta line\n"
     );
@@ -180,7 +180,7 @@ describe("editRange", () => {
       "caf" + e,
       false
     );
-    expect(result).toBe("Edited: notes/test.md");
+    expect(result).toContain("Edited notes/test.md");
     // Written back in canonical NFC.
     expect(bucket.store.get(KEY)!).toBe("Title: caf" + e + "\n");
   });
@@ -204,7 +204,7 @@ describe("editRange", () => {
       old_str: "# Heading",
       new_str: "# New Heading",
     });
-    expect(result).toBe("Edited: notes/test.md");
+    expect(result).toContain("Edited notes/test.md");
     expect(bucket.store.get(KEY)!).toContain("# New Heading");
   });
 
