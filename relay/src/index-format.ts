@@ -62,56 +62,63 @@ export function tokenize(text: string): string[] {
   return out;
 }
 
+/**
+ * Filter for inline (#tag in body) candidates. Frontmatter tags are the user's
+ * explicit declaration and are NOT filtered — only body-scanned tags, which is
+ * where the noise comes from (CSS hex values, bare numbers, URL/id fragments).
+ */
+function isPlausibleInlineTag(t: string): boolean {
+  if (t.length < 2) return false; // single letters: #a, #c
+  if (/^[0-9-]+$/.test(t)) return false; // bare numbers / invoice ids: #1, #2998-2142-5237
+  if (/^[0-9a-f]{3}$|^[0-9a-f]{6}$|^[0-9a-f]{8}$/i.test(t)) return false; // hex colours: #fff, #fafaf7, #ffffff
+  return true;
+}
+
 function extractTags(content: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
+  const add = (t: string) => {
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  };
 
-  // Inline tags: #tag, #tag/sub, #tag-with-dash
-  // Must be preceded by start-of-line or whitespace (not e.g. URL fragments)
+  // Inline tags: #tag, #tag/sub, #tag-with-dash. Strip fenced and inline code
+  // first so CSS hex values and #-comments inside code aren't read as tags,
+  // then filter obvious non-tags (see isPlausibleInlineTag).
+  const prose = content
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`\n]*`/g, " ");
   const inlineRegex = /(?:^|\s)#([\w/-]+)/g;
   let m: RegExpExecArray | null;
-  while ((m = inlineRegex.exec(content)) !== null) {
+  while ((m = inlineRegex.exec(prose)) !== null) {
     const tag = m[1].toLowerCase();
-    if (!seen.has(tag)) {
-      seen.add(tag);
-      out.push(tag);
-    }
+    if (isPlausibleInlineTag(tag)) add(tag);
   }
 
-  // Frontmatter tags
+  // Frontmatter tags (explicit — not junk-filtered).
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
   if (fmMatch) {
     const fm = fmMatch[1];
 
-    // tags: [a, b, c] or tags: a, b, c
-    const inlineTagsMatch = fm.match(/^tags:\s*\[?(.+?)\]?\s*$/m);
+    // Flow form on the SAME line: `tags: [a, b, c]` or `tags: a, b, c`.
+    // [ \t]* (not \s*) so it cannot swallow the newline into a list form and
+    // capture the first "- item" with its bullet (the #- tools bug).
+    const inlineTagsMatch = fm.match(/^tags:[ \t]*\[?(.+?)\]?[ \t]*$/m);
     if (inlineTagsMatch) {
-      const tags = inlineTagsMatch[1]
-        .split(",")
-        .map((t) => t.trim().replace(/['"#]/g, "").toLowerCase());
-      for (const tag of tags) {
-        if (tag && !seen.has(tag)) {
-          seen.add(tag);
-          out.push(tag);
-        }
+      for (const t of inlineTagsMatch[1].split(",")) {
+        add(t.trim().replace(/['"#]/g, "").toLowerCase());
       }
     }
 
-    // tags:\n  - a\n  - b
-    const listMatch = fm.match(/^tags:\s*\n((?:\s*-\s*.+\n?)+)/m);
+    // List form: tags:\n  - a\n  - b
+    const listMatch = fm.match(/^tags:[ \t]*\n((?:[ \t]*-[ \t]*.+\n?)+)/m);
     if (listMatch) {
-      const items = listMatch[1].match(/-\s*(.+)/g);
+      const items = listMatch[1].match(/-[ \t]*(.+)/g);
       if (items) {
         for (const item of items) {
-          const tag = item
-            .replace(/^-\s*/, "")
-            .trim()
-            .replace(/['"#]/g, "")
-            .toLowerCase();
-          if (tag && !seen.has(tag)) {
-            seen.add(tag);
-            out.push(tag);
-          }
+          add(item.replace(/^-[ \t]*/, "").trim().replace(/['"#]/g, "").toLowerCase());
         }
       }
     }
