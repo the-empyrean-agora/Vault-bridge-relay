@@ -45,6 +45,24 @@ describe("search: coverage ranking (multi-word is no longer noisy OR)", () => {
   });
 });
 
+describe("search: proximity re-rank within a coverage band", () => {
+  it("ranks the note where terms sit TOGETHER above one where they're scattered", async () => {
+    const bucket = makeBucket({});
+    const filler = Array(150).fill("filler").join(" ");
+    // Both match all three terms (3/3 coverage), so only proximity separates them.
+    await writeFile(vault(bucket), "scattered.md", `clean ${filler} preserve ${filler} ask`);
+    await writeFile(vault(bucket), "tight.md", `the clean preserve ask loop ${filler}`);
+    const out = await searchFiles(vault(bucket), "clean preserve ask");
+    expect(firstResultPath(out)).toBe("tight.md");
+  });
+
+  it("single-word queries skip proximity and still return matches", async () => {
+    const bucket = makeBucket({});
+    await writeFile(vault(bucket), "a.md", "Schneider appears here");
+    expect(await searchFiles(vault(bucket), "Schneider")).toContain("a.md");
+  });
+});
+
 describe("search: filename queries handle kebab-case", () => {
   it("filename:process-log matches process-log.md (hyphen no longer breaks it)", async () => {
     const bucket = makeBucket({});

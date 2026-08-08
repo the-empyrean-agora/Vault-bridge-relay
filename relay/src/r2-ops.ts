@@ -206,6 +206,48 @@ function signed(n: number): string {
 }
 
 /**
+ * Smallest word-span covering one occurrence of each query token that appears in
+ * the text. Smaller means the terms sit closer together (a phrase's home);
+ * Infinity if fewer than two of the tokens appear in the body. Standard minimum-
+ * window over word positions — cheap for note-sized text. Used to re-rank the
+ * top search band by proximity WITHOUT storing positions in the index.
+ */
+function proximityScore(text: string, queryTokens: string[]): number {
+  const words = text.toLowerCase().split(/[^\w]+/);
+  const events: Array<[number, number]> = []; // [wordIndex, tokenId]
+  const present = new Set<number>();
+  for (let ti = 0; ti < queryTokens.length; ti++) {
+    const qt = queryTokens[ti];
+    for (let i = 0; i < words.length; i++) {
+      if (words[i].includes(qt)) {
+        events.push([i, ti]);
+        present.add(ti);
+      }
+    }
+  }
+  if (present.size < 2) return Infinity;
+  events.sort((a, b) => a[0] - b[0]);
+  const need = present.size;
+  const count = new Map<number, number>();
+  let have = 0;
+  let best = Infinity;
+  let l = 0;
+  for (let r = 0; r < events.length; r++) {
+    const t = events[r][1];
+    count.set(t, (count.get(t) ?? 0) + 1);
+    if (count.get(t) === 1) have++;
+    while (have === need) {
+      best = Math.min(best, events[r][0] - events[l][0]);
+      const lt = events[l][1];
+      count.set(lt, (count.get(lt) ?? 0) - 1);
+      if (count.get(lt) === 0) have--;
+      l++;
+    }
+  }
+  return best;
+}
+
+/**
  * Today's date as YYYY-MM-DD in the given IANA timezone (default UTC).
  * `en-CA` formats as YYYY-MM-DD. An unknown timezone id must never abort a
  * write, so we fall back to UTC on error.
@@ -540,6 +582,8 @@ export async function searchFiles(vault: VaultCtx, query: string): Promise<strin
     weight: number;
     reason: string;
     preview: string;
+    size: number;
+    proximity?: number;
   }> = [];
 
   for (const [path, entry] of fileEntries) {
@@ -569,6 +613,7 @@ export async function searchFiles(vault: VaultCtx, query: string): Promise<strin
         weight,
         reason,
         preview: entry.preview,
+        size: entry.size ?? 0,
       });
     }
   }
@@ -582,8 +627,38 @@ export async function searchFiles(vault: VaultCtx, query: string): Promise<strin
   // Weight (filename > tag > content) only breaks ties within equal coverage,
   // so a lone weak tag hit can no longer top a multi-term content match.
   scored.sort((a, b) => b.coverage - a.coverage || b.weight - a.weight);
-  const top = scored.slice(0, 50);
   const n = queryTokens.length;
+
+  // Proximity re-rank (multi-word only): coverage floats all-term matches to the
+  // top, but within a band the note where the terms sit TOGETHER (a phrase's
+  // home) should beat one where they're merely scattered. We read only the top
+  // band and re-order it by term proximity — no positions in the index, no
+  // reindex, and single-word searches skip this entirely (stay instant).
+  let ranked = scored;
+  if (n >= 2) {
+    const BAND = 25;
+    const MAX_BYTES = 65536;
+    const band = scored.slice(0, BAND);
+    const texts = await Promise.all(
+      band.map((r) =>
+        readObjectHead(vault.bucket, `${vault.prefix}/${r.path}`, r.size, MAX_BYTES).catch(
+          () => null
+        )
+      )
+    );
+    band.forEach((r, i) => {
+      r.proximity = texts[i] ? proximityScore(texts[i]!, queryTokens) : Infinity;
+    });
+    band.sort(
+      (a, b) =>
+        b.coverage - a.coverage ||
+        (a.proximity ?? Infinity) - (b.proximity ?? Infinity) ||
+        b.weight - a.weight
+    );
+    ranked = band.concat(scored.slice(BAND));
+  }
+
+  const top = ranked.slice(0, 50);
 
   const lines = top.map(
     (r) => `[${r.coverage}/${n} ${r.reason}] ${r.path}\n  ${r.preview || "(no preview)"}`
